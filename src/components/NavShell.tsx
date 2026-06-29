@@ -1,5 +1,5 @@
 import React from 'react';
-import { ClipboardList, Sparkles, Calendar as CalendarIcon, Settings, User, LogOut } from 'lucide-react';
+import { ClipboardList, Sparkles, Calendar as CalendarIcon, Settings, User, LogOut, Mail } from 'lucide-react';
 
 interface NavShellProps {
   currentTab: string;
@@ -23,6 +23,7 @@ export const NavShell: React.FC<NavShellProps> = ({
   const menuItems = [
     { id: 'tasks', label: 'Tasks', icon: ClipboardList },
     { id: 'agent', label: 'Agent', icon: Sparkles },
+    { id: 'gmail', label: 'Inbox Scan', icon: Mail },
     { id: 'schedule', label: 'Schedule', icon: CalendarIcon },
   ];
 

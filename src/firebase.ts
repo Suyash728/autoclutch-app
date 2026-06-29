@@ -1,6 +1,10 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore, getDocFromServer, doc } from 'firebase/firestore';
+import { initializeFirestore, getDocFromServer, doc, setLogLevel } from 'firebase/firestore';
+import { getMessaging } from 'firebase/messaging';
+
+// Silence gRPC connection reset warnings
+setLogLevel('error');
 
 const firebaseConfig = {
   projectId: "gen-lang-client-0322520339",
@@ -13,10 +17,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with custom databaseId
-export const db = getFirestore(app, "ai-studio-autoclutch-87e8c7df-e80b-489c-ac55-1e0602e6b514");
+// Initialize Firestore with custom databaseId and long-polling to prevent gRPC connection reset warnings
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true
+}, "ai-studio-autoclutch-87e8c7df-e80b-489c-ac55-1e0602e6b514");
 
 export const auth = getAuth(app);
+export const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
 export const googleProvider = new GoogleAuthProvider();
 
 // Request Google Workspace scopes

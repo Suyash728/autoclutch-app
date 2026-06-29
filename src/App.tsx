@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Plus,
@@ -37,70 +37,28 @@ import { ListItem } from './components/ListItem';
 import { NavShell } from './components/NavShell';
 import { MotionSpring } from './design-tokens';
 
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth, db } from './firebase';
+import {
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot
+} from 'firebase/firestore';
+import { LoginScreen } from './components/LoginScreen';
+
 // Predefined Chips & Tags
 const PREDEFINED_EFFORTS = [0.5, 1, 2, 3, 5, 8];
 const PREDEFINED_TAGS = ['Assignment', 'Project', 'Exam', 'Reading', 'Admin', 'Personal'];
 
 export default function App() {
+  const [user, setUser] = useState<any | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [currentTab, setCurrentTab] = useState<string>('tasks');
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: 'task-1',
-      title: 'Finalize Q3 Strategy Presentation',
-      description: "Review the latest metrics from the data science team and integrate them into the final slide deck for tomorrow's executive briefing.",
-      dueDate: '2026-06-29',
-      dueTime: '2:00 PM',
-      estimatedEffort: 2,
-      tag: 'Exec Team',
-      priority: 'Urgent',
-      isCompleted: false,
-      googleTaskId: 'gtask-1',
-      deadlineEventId: 'gcal-deadline-1',
-      source: 'AutoClutch Agent Sync'
-    },
-    {
-      id: 'task-2',
-      title: 'Update Client Onboarding Flow',
-      description: 'Implement the new welcome email sequence and trigger rules in the CRM.',
-      dueDate: '2026-06-30',
-      dueTime: '10:00 AM',
-      estimatedEffort: 3,
-      tag: 'Marketing',
-      priority: 'High',
-      isCompleted: false,
-      googleTaskId: 'gtask-2',
-      source: 'Slack parsing'
-    },
-    {
-      id: 'task-3',
-      title: 'DBMS Assignment 4',
-      description: 'Complete database normalization exercises and write clean SQL schema declarations.',
-      dueDate: '2026-06-29',
-      dueTime: '11:59 PM',
-      estimatedEffort: 5,
-      tag: 'Assignment',
-      priority: 'Urgent',
-      isCompleted: false,
-      googleTaskId: 'gtask-3',
-      deadlineEventId: 'gcal-deadline-3',
-      subtasksCount: { completed: 2, total: 3 },
-      source: 'Gmail Inbox Parsing'
-    },
-    {
-      id: 'task-4',
-      title: 'Machine Learning project report',
-      description: 'Analyze dataset and draft findings on gradient boosting model metrics.',
-      dueDate: '2026-07-02',
-      dueTime: '5:00 PM',
-      estimatedEffort: 8,
-      tag: 'Project',
-      priority: 'High',
-      isCompleted: false,
-      googleTaskId: 'gtask-4',
-      deadlineEventId: 'gcal-deadline-4',
-      source: 'Calendar Event Sync'
-    }
-  ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const [focusBlocks, setFocusBlocks] = useState<FocusBlock[]>([
     {
@@ -125,34 +83,17 @@ export default function App() {
     }
   ]);
 
-  const [activityLogs, setActivityLogs] = useState<AgentActivityLog[]>([
-    {
-      id: 'log-1',
-      text: "AutoClutch sorted 42 emails into your 'To Read' folder.",
-      timestamp: '10 mins ago',
-      type: 'task'
-    },
-    {
-      id: 'log-2',
-      text: 'AutoClutch rescheduled your 1:1 with Sarah to tomorrow.',
-      timestamp: '1 hr ago',
-      type: 'calendar'
-    },
-    {
-      id: 'log-3',
-      text: "Found a deadline in your inbox → created 'ML report' → scheduled 3 focus blocks.",
-      timestamp: '2 hrs ago',
-      type: 'info'
-    }
-  ]);
+  const [activityLogs, setActivityLogs] = useState<AgentActivityLog[]>([]);
 
   // Filters State
   const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'upcoming' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [customPrompt, setCustomPrompt] = useState('');
 
   // Modals States
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   // Form States for Creating/Editing
@@ -178,8 +119,8 @@ export default function App() {
   const [planningProgress, setPlanningProgress] = useState(0);
 
   // Settings State
-  const [profileName, setProfileName] = useState('Alex Mercer');
-  const [profileEmail, setProfileEmail] = useState('alex.mercer@example.com');
+  const [profileName, setProfileName] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
   const [focusReminders, setFocusReminders] = useState(true);
   const [atRiskAlerts, setAtRiskAlerts] = useState(true);
   const [startTime, setStartTime] = useState('09:00 AM');
@@ -189,6 +130,266 @@ export default function App() {
   const [isCalendarConnected, setIsCalendarConnected] = useState(true);
   const [isGmailConnected, setIsGmailConnected] = useState(true);
   const [isTasksConnected, setIsTasksConnected] = useState(true);
+
+  // Helper date conversions
+  function convertToISO(dueDate: string, dueTime?: string): string {
+    if (!dueDate) return new Date().toISOString();
+    let hours = 17; // default 5 PM
+    let minutes = 0;
+    if (dueTime) {
+      const match = dueTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (match) {
+        let h = parseInt(match[1]);
+        const m = parseInt(match[2]);
+        const ampm = match[3].toUpperCase();
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+    const [year, month, day] = dueDate.split('-').map(Number);
+    const date = new Date(year, month - 1, day, hours, minutes);
+    return date.toISOString();
+  }
+
+  function formatTimeFromISO(iso: string): string {
+    try {
+      const date = new Date(iso);
+      let hours = date.getHours();
+      const minutes = date.getMinutes();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12; // the hour '0' should be '12'
+      const minStr = minutes < 10 ? '0' + minutes : minutes;
+      return `${hours}:${minStr} ${ampm}`;
+    } catch {
+      return '5:00 PM';
+    }
+  }
+
+  function formatTimestamp(tsString?: string): string {
+    if (!tsString) return 'Just now';
+    try {
+      const diff = Date.now() - new Date(tsString).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return `${mins} mins ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
+      return new Date(tsString).toLocaleDateString();
+    } catch {
+      return 'Just now';
+    }
+  }
+
+  // Firebase auth state subscription
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Update profile states when user changes
+  useEffect(() => {
+    if (user) {
+      setProfileName(user.displayName || 'AutoClutch User');
+      setProfileEmail(user.email || 'user@autoclutch.ai');
+    }
+  }, [user]);
+
+  // Firestore Task Listener
+  useEffect(() => {
+    if (!user) {
+      setTasks([]);
+      return;
+    }
+
+    const tasksRef = collection(db, 'users', user.uid, 'tasks');
+    const unsubscribe = onSnapshot(tasksRef, (snapshot) => {
+      const taskList: Task[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        
+        const priorityMap: Record<number, Task['priority']> = {
+          0: 'Low',
+          1: 'Normal',
+          2: 'High',
+          3: 'Urgent'
+        };
+
+        taskList.push({
+          id: doc.id,
+          title: data.title || '',
+          description: data.description || '',
+          dueDate: data.dueDateTime ? data.dueDateTime.split('T')[0] : '',
+          dueTime: data.dueDateTime && data.dueDateTime.includes('T') ? formatTimeFromISO(data.dueDateTime) : '5:00 PM',
+          estimatedEffort: data.effortHours || 1,
+          tag: data.tag || 'General',
+          isCompleted: data.status === 'completed',
+          priority: priorityMap[data.priorityScore] || 'Normal',
+          googleTaskId: data.googleTaskId || undefined,
+          deadlineEventId: data.deadlineEventId || undefined,
+          focusEventIds: data.focusEventIds || [],
+          source: data.source || 'Manual entry'
+        });
+      });
+      
+      if (taskList.length === 0) {
+        seedDefaultTasks(user.uid);
+      } else {
+        setTasks(taskList);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Firestore Agent Logs Listener
+  useEffect(() => {
+    if (!user) {
+      setActivityLogs([]);
+      return;
+    }
+
+    const logsRef = collection(db, 'users', user.uid, 'agentLogs');
+    const unsubscribe = onSnapshot(logsRef, (snapshot) => {
+      const logList: AgentActivityLog[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        let text = `[Step ${data.step}] Executed ${data.toolName}`;
+        if (data.result) {
+          text += `: ${data.result}`;
+        }
+        
+        let type: AgentActivityLog['type'] = 'info';
+        if (data.toolName?.toLowerCase().includes('task')) {
+          type = 'task';
+        } else if (data.toolName?.toLowerCase().includes('calendar') || data.toolName?.toLowerCase().includes('schedule')) {
+          type = 'calendar';
+        }
+
+        logList.push({
+          id: doc.id,
+          text: text,
+          timestamp: formatTimestamp(data.ts),
+          type: type
+        });
+      });
+
+      logList.sort((a, b) => b.id.localeCompare(a.id));
+
+      if (logList.length === 0) {
+        seedDefaultLogs(user.uid);
+      } else {
+        setActivityLogs(logList);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Seeding functions
+  const seedDefaultTasks = async (uid: string) => {
+    const defaultTasks = [
+      {
+        title: 'Finalize Q3 Strategy Presentation',
+        description: "Review the latest metrics from the data science team and integrate them into the final slide deck for tomorrow's executive briefing.",
+        dueDateTime: convertToISO('2026-06-29', '2:00 PM'),
+        effortHours: 2,
+        tag: 'Exec Team',
+        priorityScore: 3,
+        status: 'pending',
+        source: 'AutoClutch Agent Sync',
+        googleTaskId: 'gtask-1',
+        deadlineEventId: 'gcal-deadline-1',
+        focusEventIds: [],
+        subtasks: []
+      },
+      {
+        title: 'Update Client Onboarding Flow',
+        description: 'Implement the new welcome email sequence and trigger rules in the CRM.',
+        dueDateTime: convertToISO('2026-06-30', '10:00 AM'),
+        effortHours: 3,
+        tag: 'Marketing',
+        priorityScore: 2,
+        status: 'pending',
+        source: 'Slack parsing',
+        googleTaskId: 'gtask-2',
+        deadlineEventId: null,
+        focusEventIds: [],
+        subtasks: []
+      },
+      {
+        title: 'DBMS Assignment 4',
+        description: 'Complete database normalization exercises and write clean SQL schema declarations.',
+        dueDateTime: convertToISO('2026-06-29', '11:59 PM'),
+        effortHours: 5,
+        tag: 'Assignment',
+        priorityScore: 3,
+        status: 'pending',
+        source: 'Gmail Inbox Parsing',
+        googleTaskId: 'gtask-3',
+        deadlineEventId: 'gcal-deadline-3',
+        focusEventIds: [],
+        subtasks: []
+      }
+    ];
+
+    for (const t of defaultTasks) {
+      const taskId = `task-${Math.random().toString(36).substr(2, 9)}`;
+      await setDoc(doc(db, 'users', uid, 'tasks', taskId), {
+        ...t,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+  };
+
+  const seedDefaultLogs = async (uid: string) => {
+    const defaultLogs = [
+      {
+        step: 1,
+        toolName: 'Gmail Inbox Triage',
+        args: '{"folder": "inbox"}',
+        result: 'AutoClutch sorted 42 emails into your "To Read" folder.',
+        ts: new Date(Date.now() - 10 * 60000).toISOString()
+      },
+      {
+        step: 2,
+        toolName: 'Calendar Rescheduler',
+        args: '{"event": "1:1 with Sarah"}',
+        result: 'AutoClutch rescheduled your 1:1 with Sarah to tomorrow.',
+        ts: new Date(Date.now() - 60 * 60000).toISOString()
+      },
+      {
+        step: 3,
+        toolName: 'Gemini NLP Extractor',
+        args: '{"text": "ML report due Friday"}',
+        result: 'Found a deadline in your inbox → created "ML report" → scheduled 3 focus blocks.',
+        ts: new Date(Date.now() - 120 * 60000).toISOString()
+      }
+    ];
+
+    for (const l of defaultLogs) {
+      const logId = `log-${Math.random().toString(36).substr(2, 9)}`;
+      await setDoc(doc(db, 'users', uid, 'agentLogs', logId), l);
+    }
+  };
+
+  const addFirestoreLog = async (uid: string, toolName: string, result: string, args: string = '{}') => {
+    const step = 1;
+    const logId = `log-${Date.now()}`;
+    await setDoc(doc(db, 'users', uid, 'agentLogs', logId), {
+      step,
+      toolName,
+      args,
+      result,
+      ts: new Date().toISOString()
+    });
+  };
 
   // Open task creator
   const handleOpenCreateModal = () => {
@@ -232,92 +433,118 @@ export default function App() {
     setIsTaskModalOpen(true);
   };
 
+  // Open task detail view
+  const handleOpenDetailModal = (task: Task) => {
+    setSelectedTask(task);
+    setIsDetailModalOpen(true);
+  };
+
   // Save Task
-  const handleSaveTask = (e: React.FormEvent) => {
+  const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim()) return;
+    if (!formTitle.trim() || !user) return;
 
     const finalTag = formTag === 'Custom' ? (customTagInput.trim() || 'General') : formTag;
     const finalEffort = customEffortInput ? parseFloat(customEffortInput) : formEffort;
 
-    if (selectedTask) {
-      // Editing
-      setTasks(tasks.map(t => {
-        if (t.id === selectedTask.id) {
-          return {
-            ...t,
-            title: formTitle,
-            description: formDescription,
-            dueDate: formDueDate,
-            dueTime: formDueTime,
-            estimatedEffort: finalEffort,
-            tag: finalTag,
-            priority: formPriority,
-            googleTaskId: isGoogleSyncChecked ? (t.googleTaskId || `gtask-${Date.now()}`) : undefined,
-            deadlineEventId: isCalendarSyncChecked ? (t.deadlineEventId || `gcal-${Date.now()}`) : undefined,
-          };
-        }
-        return t;
-      }));
+    const priorityScoreMap: Record<string, number> = {
+      'Low': 0,
+      'Normal': 1,
+      'High': 2,
+      'Urgent': 3
+    };
 
-      // Add activity log
-      addLog(`Updated Task: "${formTitle}" (Synced to Google Tasks & Calendar)`, 'task');
-    } else {
-      // Creating
-      const newTask: Task = {
-        id: `task-${Date.now()}`,
-        title: formTitle,
-        description: formDescription,
-        dueDate: formDueDate,
-        dueTime: formDueTime,
-        estimatedEffort: finalEffort,
-        tag: finalTag,
-        priority: formPriority,
-        isCompleted: false,
-        googleTaskId: isGoogleSyncChecked ? `gtask-${Date.now()}` : undefined,
-        deadlineEventId: isCalendarSyncChecked ? `gcal-${Date.now()}` : undefined,
-        source: 'Manual entry'
-      };
-      setTasks([newTask, ...tasks]);
+    const dueDateTimeIso = convertToISO(formDueDate, formDueTime);
 
-      // Add activity log
-      addLog(`Created Task: "${formTitle}" (Estimated effort: ${finalEffort} hrs)`, 'task');
+    try {
+      if (selectedTask) {
+        // Editing in Firestore
+        const taskRef = doc(db, 'users', user.uid, 'tasks', selectedTask.id);
+        await updateDoc(taskRef, {
+          title: formTitle,
+          description: formDescription,
+          dueDateTime: dueDateTimeIso,
+          effortHours: finalEffort,
+          tag: finalTag,
+          priorityScore: priorityScoreMap[formPriority] ?? 1,
+          googleTaskId: isGoogleSyncChecked ? (selectedTask.googleTaskId || `gtask-${Date.now()}`) : null,
+          deadlineEventId: isCalendarSyncChecked ? (selectedTask.deadlineEventId || `gcal-${Date.now()}`) : null,
+          updatedAt: new Date().toISOString()
+        });
+
+        await addFirestoreLog(user.uid, 'Task Update', `Updated Task: "${formTitle}" (Synced to Google Tasks & Calendar)`);
+      } else {
+        // Creating in Firestore
+        const taskId = `task-${Date.now()}`;
+        const taskRef = doc(db, 'users', user.uid, 'tasks', taskId);
+        await setDoc(taskRef, {
+          title: formTitle,
+          description: formDescription,
+          dueDateTime: dueDateTimeIso,
+          effortHours: finalEffort,
+          tag: finalTag,
+          priorityScore: priorityScoreMap[formPriority] ?? 1,
+          status: 'pending',
+          source: 'user',
+          googleTaskId: isGoogleSyncChecked ? `gtask-${Date.now()}` : null,
+          deadlineEventId: isCalendarSyncChecked ? `gcal-${Date.now()}` : null,
+          focusEventIds: [],
+          subtasks: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+
+        await addFirestoreLog(user.uid, 'Task Create', `Created Task: "${formTitle}" (Estimated effort: ${finalEffort} hrs)`);
+      }
+    } catch (err) {
+      console.error("Error saving task:", err);
     }
 
     setIsTaskModalOpen(false);
   };
 
-  const handleDeleteTask = (id: string) => {
-    const taskToDelete = tasks.find(t => t.id === id);
-    if (!taskToDelete) return;
-    setTasks(tasks.filter(t => t.id !== id));
-    addLog(`Deleted Task: "${taskToDelete.title}" and cleaned up references`, 'alert');
-  };
-
-  const handleToggleComplete = (id: string) => {
-    setTasks(tasks.map(t => {
-      if (t.id === id) {
-        const nextState = !t.isCompleted;
-        addLog(
-          nextState
-            ? `Completed Task: "${t.title}" (Verified Sync)`
-            : `Reopened Task: "${t.title}"`,
-          nextState ? 'info' : 'alert'
-        );
-        return { ...t, isCompleted: nextState };
+  const handleDeleteTask = async (id: string) => {
+    if (!user) return;
+    try {
+      const taskToDelete = tasks.find(t => t.id === id);
+      const taskRef = doc(db, 'users', user.uid, 'tasks', id);
+      await deleteDoc(taskRef);
+      if (taskToDelete) {
+        await addFirestoreLog(user.uid, 'Task Delete', `Deleted Task: "${taskToDelete.title}" and cleaned up references`);
       }
-      return t;
-    }));
+    } catch (err) {
+      console.error("Error deleting task:", err);
+    }
   };
 
-  const addLog = (text: string, type: AgentActivityLog['type']) => {
-    const newLog: AgentActivityLog = {
-      id: `log-${Date.now()}`,
-      text,
-      timestamp: 'Just now',
-      type
-    };
-    setActivityLogs([newLog, ...activityLogs]);
+  const handleToggleComplete = async (id: string) => {
+    if (!user) return;
+    try {
+      const taskToToggle = tasks.find(t => t.id === id);
+      if (!taskToToggle) return;
+      const nextCompleted = !taskToToggle.isCompleted;
+
+      const taskRef = doc(db, 'users', user.uid, 'tasks', id);
+      await updateDoc(taskRef, {
+        status: nextCompleted ? 'completed' : 'pending',
+        updatedAt: new Date().toISOString()
+      });
+
+      await addFirestoreLog(
+        user.uid,
+        'Task Toggle',
+        nextCompleted
+          ? `Completed Task: "${taskToToggle.title}" (Verified Sync)`
+          : `Reopened Task: "${taskToToggle.title}"`
+      );
+    } catch (err) {
+      console.error("Error toggling task complete:", err);
+    }
+  };
+
+  const addLog = async (text: string, type: AgentActivityLog['type']) => {
+    if (!user) return;
+    await addFirestoreLog(user.uid, type === 'task' ? 'Task Sync' : 'System Log', text);
   };
 
   // Filter logic
@@ -343,10 +570,11 @@ export default function App() {
   const urgentTasksCount = tasks.filter(t => !t.isCompleted && (t.priority === 'Urgent' || t.priority === 'High')).length;
 
   // Plan My Week animation loop simulation
-  const triggerPlanMyWeek = () => {
+  const triggerPlanMyWeek = async () => {
+    if (!user) return;
     setIsPlanningWeek(true);
     setPlanningProgress(5);
-    addLog('AutoClutch initiated AI Week-Planning and calendar parsing...', 'info');
+    await addFirestoreLog(user.uid, 'Week-Planning Triage', 'AutoClutch initiated AI Week-Planning and calendar parsing...');
 
     let progress = 5;
     const interval = setInterval(() => {
@@ -354,7 +582,7 @@ export default function App() {
       if (progress >= 100) {
         progress = 100;
         clearInterval(interval);
-        setTimeout(() => {
+        setTimeout(async () => {
           setIsPlanningWeek(false);
           // Insert simulated focus blocks
           setFocusBlocks([
@@ -367,7 +595,7 @@ export default function App() {
             },
             ...focusBlocks
           ]);
-          addLog('Week planned! Synced 3 focus sessions directly to your Google Calendar.', 'calendar');
+          await addFirestoreLog(user.uid, 'Calendar Sync', 'Week planned! Synced 3 focus sessions directly to your Google Calendar.');
         }, 800);
       }
       setPlanningProgress(progress);
@@ -391,33 +619,68 @@ export default function App() {
     }, 2000);
   };
 
-  const handleVoiceCreateTask = () => {
-    if (!voiceInputText) return;
+  const handleVoiceCreateTask = async () => {
+    if (!voiceInputText || !user) return;
     
-    // Auto parsing simulation
-    const newTask: Task = {
-      id: `task-${Date.now()}`,
-      title: 'DBMS project normalization assignment',
-      description: 'Extracted automatically from voice capture prompt: "DBMS project normalization assignment due next Friday at 6:00 PM"',
-      dueDate: '2026-07-03', // Next Friday
-      dueTime: '6:00 PM',
-      estimatedEffort: 3,
-      tag: 'Assignment',
-      priority: 'High',
-      isCompleted: false,
-      googleTaskId: `gtask-v-${Date.now()}`,
-      deadlineEventId: `gcal-v-${Date.now()}`,
-      source: 'Voice Capture'
-    };
+    try {
+      const taskId = `task-${Date.now()}`;
+      const taskRef = doc(db, 'users', user.uid, 'tasks', taskId);
+      const dueDateTimeIso = convertToISO('2026-07-03', '6:00 PM');
 
-    setTasks([newTask, ...tasks]);
-    addLog('Gemini parsed voice-input: created "DBMS project normalization assignment" (estimated effort: 3h)', 'task');
+      await setDoc(taskRef, {
+        title: 'DBMS project normalization assignment',
+        description: 'Extracted automatically from voice capture prompt: "DBMS project normalization assignment due next Friday at 6:00 PM"',
+        dueDateTime: dueDateTimeIso,
+        effortHours: 3,
+        tag: 'Assignment',
+        priorityScore: 2,
+        status: 'pending',
+        source: 'ai',
+        googleTaskId: `gtask-v-${Date.now()}`,
+        deadlineEventId: `gcal-v-${Date.now()}`,
+        focusEventIds: [],
+        subtasks: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      await addFirestoreLog(user.uid, 'Gemini Voice Parser', 'Gemini parsed voice-input: created "DBMS project normalization assignment" (estimated effort: 3h)');
+    } catch (err) {
+      console.error("Error creating voice task:", err);
+    }
+
     setIsVoiceModalOpen(false);
     setVoiceInputText('');
   };
 
+
+  const handleCustomPromptSubmit = async () => {
+    if (!customPrompt.trim() || !user) return;
+    await addFirestoreLog(user.uid, 'Agent Command', `Instructed: "${customPrompt}"`);
+    setCustomPrompt('');
+  };
+
+  const handleSignOut = () => {
+    signOut(auth);
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#1A1244] flex items-center justify-center p-4">
+        <div className="relative flex flex-col items-center">
+          <div className="w-12 h-12 rounded-full border-4 border-[#5B4FE3]/20 border-t-[#5B4FE3] animate-spin" />
+          <span className="text-xs font-bold uppercase tracking-wider text-[#5B4FE3] mt-4 animate-pulse">Initializing AutoClutch...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
+
   return (
-    <NavShell currentTab={currentTab} onChangeTab={setCurrentTab}>
+    <NavShell currentTab={currentTab} onChangeTab={setCurrentTab} user={user} onSignOut={handleSignOut}>
       <AnimatePresence mode="wait">
         
         {/* ========================================== */}
@@ -530,6 +793,7 @@ export default function App() {
                       onToggleComplete={handleToggleComplete}
                       onEdit={handleOpenEditModal}
                       onDelete={handleDeleteTask}
+                      onViewDetails={handleOpenDetailModal}
                     />
                   ))
                 ) : (
@@ -722,8 +986,10 @@ export default function App() {
                 <Input
                   placeholder="e.g. Schedule 2 hours for Q3 slide preparations on Tuesday morning..."
                   className="flex-1"
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
                 />
-                <Button variant="primary" onClick={() => addLog('Triggered custom agent prompt instruction', 'info')}>
+                <Button variant="primary" onClick={handleCustomPromptSubmit}>
                   Instruct
                 </Button>
               </div>
@@ -1240,6 +1506,150 @@ export default function App() {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* ========================================== */}
+      {/* TASK DETAIL GLASS MODAL */}
+      {/* ========================================== */}
+      <Modal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        title="Task Details"
+      >
+        {selectedTask && (
+          <div className="space-y-6">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                {/* Tag Chip */}
+                <Chip
+                  label={selectedTask.tag}
+                  isActive={true}
+                  variant="primary"
+                />
+
+                {/* Priority Badge */}
+                <span
+                  className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-md ${
+                    selectedTask.priority === 'Urgent'
+                      ? 'bg-urgent/15 text-urgent border border-urgent/25'
+                      : selectedTask.priority === 'High'
+                      ? 'bg-tertiary/15 text-tertiary border border-tertiary/25'
+                      : 'bg-primary/15 text-primary border border-primary/25'
+                  }`}
+                >
+                  {selectedTask.priority} Priority
+                </span>
+
+                {/* Completion Status */}
+                <span
+                  className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-md ${
+                    selectedTask.isCompleted
+                      ? 'bg-success/15 text-success border border-success/25'
+                      : 'bg-white/5 text-on-surface-variant border border-white/5'
+                  }`}
+                >
+                  {selectedTask.isCompleted ? 'Completed' : 'Pending'}
+                </span>
+              </div>
+
+              <h3 className="text-xl md:text-2xl font-extrabold text-white tracking-tight leading-tight">
+                {selectedTask.title}
+              </h3>
+            </div>
+
+            {selectedTask.description && (
+              <div className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  Description
+                </span>
+                <div className="p-4 bg-surface-container-high/40 rounded-xl border border-white/5 text-sm text-on-surface font-normal leading-relaxed whitespace-pre-wrap">
+                  {selectedTask.description}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Due Date Info */}
+              <div className="p-3.5 bg-surface-container-high/40 rounded-xl border border-white/5 flex items-center gap-3">
+                <Clock className="w-5 h-5 text-primary" />
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-on-surface-variant block">Due Date & Time</span>
+                  <span className="text-sm font-semibold text-white">
+                    {selectedTask.dueDate} {selectedTask.dueTime ? `at ${selectedTask.dueTime}` : ''}
+                  </span>
+                </div>
+              </div>
+
+              {/* Effort Info */}
+              <div className="p-3.5 bg-surface-container-high/40 rounded-xl border border-white/5 flex items-center gap-3">
+                <Bookmark className="w-5 h-5 text-tertiary" />
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-on-surface-variant block">Estimated Effort</span>
+                  <span className="text-sm font-semibold text-white font-mono">
+                    {selectedTask.estimatedEffort} hours
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Sync details if present */}
+            {(selectedTask.googleTaskId || selectedTask.deadlineEventId) && (
+              <div className="p-4 bg-surface-container-high/60 rounded-xl border border-white/5 space-y-2">
+                <span className="text-xs uppercase font-extrabold tracking-widest text-on-surface-variant block">Google Workspace Sync</span>
+                <div className="space-y-1.5 text-xs font-semibold">
+                  {selectedTask.googleTaskId && (
+                    <div className="flex items-center gap-2 text-success">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Synced to Google Tasks</span>
+                    </div>
+                  )}
+                  {selectedTask.deadlineEventId && (
+                    <div className="flex items-center gap-2 text-success">
+                      <CalendarIcon className="w-4 h-4" />
+                      <span>Calendar Deadline reminder created</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-white/5">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setIsDetailModalOpen(false);
+                  handleToggleComplete(selectedTask.id);
+                }}
+                className="flex-1"
+              >
+                {selectedTask.isCompleted ? 'Mark as Pending' : 'Mark as Completed'}
+              </Button>
+              
+              <div className="flex flex-1 gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setIsDetailModalOpen(false);
+                    handleDeleteTask(selectedTask.id);
+                  }}
+                  className="flex-1 border-urgent/30 hover:bg-urgent/10 text-urgent"
+                >
+                  Delete
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setIsDetailModalOpen(false);
+                    handleOpenEditModal(selectedTask);
+                  }}
+                  className="flex-1"
+                >
+                  Edit Task
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
 
     </NavShell>

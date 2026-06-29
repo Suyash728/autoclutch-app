@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account profile details",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The user's display name" },
+        "email": { "type": "string", "description": "The user's email address" }
+      },
+      "required": ["email"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A task created manually or via autonomous AI loop",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Task title" },
+        "description": { "type": "string", "description": "Detailed description" },
+        "dueDateTime": { "type": "string", "description": "ISO timestamp for due date and time" },
+        "effortHours": { "type": "number", "description": "Estimated effort in hours" },
+        "tag": { "type": "string", "description": "Category tag classification" },
+        "priorityScore": { "type": "number", "description": "Score mapped to priority" },
+        "status": { "type": "string", "description": "e.g. pending, completed" },
+        "source": { "type": "string", "enum": ["user", "ai"], "description": "Origin of the task" },
+        "googleTaskId": { "type": "string", "description": "Linked Google Tasks ID" },
+        "deadlineEventId": { "type": "string", "description": "Linked Google Calendar Deadline Event ID" },
+        "focusEventIds": { "type": "array", "description": "List of linked focus calendar event IDs" },
+        "subtasks": { "type": "array", "description": "List of child subtasks" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of creation" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["title", "dueDateTime", "status", "source"]
+    },
+    "AgentLog": {
+      "title": "Agent Activity Log",
+      "description": "Autonomous loops action logging for explaining decisions",
+      "type": "object",
+      "properties": {
+        "step": { "type": "number", "description": "Loop step index" },
+        "toolName": { "type": "string", "description": "The name of the tool executed" },
+        "args": { "type": "string", "description": "Serialized inputs passed to the tool" },
+        "result": { "type": "string", "description": "Result summary" },
+        "ts": { "type": "string", "description": "ISO timestamp of log entry" }
+      },
+      "required": ["step", "toolName", "ts"]
+    }
+  },
+  "firestore": {
+    "users/{uid}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Primary user profile document"
+    },
+    "users/{uid}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "A specific user task document"
+    },
+    "users/{uid}/agentLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AgentLog" },
+      "description": "Agent activity loop run-logs"
+    }
+  }
+}

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Light Metallic Gradient Background -->
+    <linearGradient id="lightBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e8e6f5" />
+    </linearGradient>
+
+    <!-- Glass Glow Filter -->
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <!-- Shield Border Gradient -->
+    <linearGradient id="shieldBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5B4FE3" />
+      <stop offset="100%" stop-color="#4232CA" />
+    </linearGradient>
+
+    <!-- Shield Fill Gradient -->
+    <linearGradient id="shieldFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f0effd" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#e0ddfc" stop-opacity="0.95" />
+    </linearGradient>
+
+    <!-- Symbol Inner Fill Gradient -->
+    <linearGradient id="symbolGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5B4FE3" />
+      <stop offset="100%" stop-color="#4232CA" />
+    </linearGradient>
+  </defs>
+
+  <!-- Base Squircle Background -->
+  <rect width="512" height="512" rx="128" fill="url(#lightBg)" />
+
+  <!-- The Shield Structure -->
+  <g transform="translate(0, 0)">
+    <!-- Outer Shield Glow -->
+    <path d="M256,128 C305,128 355,145 355,145 C355,145 375,245 340,315 C305,385 256,410 256,410 C256,410 207,385 172,315 C137,245 157,145 157,145 C157,145 207,128 256,128 Z" 
+          fill="url(#shieldFill)" 
+          stroke="url(#shieldBorder)" 
+          stroke-width="12" 
+          stroke-linejoin="round" />
+  </g>
+
+  <!-- Autonomous Speed Clutch Symbol -->
+  <g transform="translate(0, 0)">
+    <!-- Main dynamic chevron symbol -->
+    <path d="M 215,225 
+             L 305,225 
+             L 305,255 
+             L 245,345 
+             L 215,345 
+             L 265,270 
+             L 195,270 
+             L 215,240 
+             Z" 
+          fill="url(#symbolGrad)" />
+          
+    <!-- Dynamic bottom accent slash representing split second clutch action -->
+    <path d="M 205,315 L 245,255 L 255,270 L 215,330 Z" fill="#ff7a5c" opacity="0.9" />
+  </g>
+</svg>

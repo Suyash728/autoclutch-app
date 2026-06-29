@@ -9,6 +9,7 @@ interface ListItemProps {
   onToggleComplete: (id: string) => void;
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
+  onViewDetails?: (task: Task) => void;
 }
 
 export const ListItem: React.FC<ListItemProps> = ({
@@ -16,6 +17,7 @@ export const ListItem: React.FC<ListItemProps> = ({
   onToggleComplete,
   onEdit,
   onDelete,
+  onViewDetails,
 }) => {
   const getPriorityColor = (priority: Task['priority']) => {
     switch (priority) {
@@ -61,7 +63,10 @@ export const ListItem: React.FC<ListItemProps> = ({
         </button>
 
         {/* Content Area */}
-        <div className="flex-1 min-w-0">
+        <div
+          onClick={() => onViewDetails?.(task)}
+          className="flex-1 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
+        >
           <div className="flex flex-wrap items-center gap-2 mb-1">
             {/* Tag */}
             <Chip

@@ -1,22 +1,33 @@
 import React from 'react';
-import { ClipboardList, Sparkles, Calendar as CalendarIcon, Settings, User } from 'lucide-react';
+import { ClipboardList, Sparkles, Calendar as CalendarIcon, Settings, User, LogOut } from 'lucide-react';
 
 interface NavShellProps {
   currentTab: string;
   onChangeTab: (tab: string) => void;
   children: React.ReactNode;
+  user: {
+    displayName: string | null;
+    email: string | null;
+    photoURL: string | null;
+  } | null;
+  onSignOut: () => void;
 }
 
 export const NavShell: React.FC<NavShellProps> = ({
   currentTab,
   onChangeTab,
   children,
+  user,
+  onSignOut,
 }) => {
   const menuItems = [
     { id: 'tasks', label: 'Tasks', icon: ClipboardList },
     { id: 'agent', label: 'Agent', icon: Sparkles },
     { id: 'schedule', label: 'Schedule', icon: CalendarIcon },
   ];
+
+  const userDisplayName = user?.displayName || 'AutoClutch User';
+  const userEmail = user?.email || 'user@autoclutch.ai';
 
   return (
     <div className="min-h-screen bg-bg-base text-on-surface flex flex-col lg:flex-row font-sans selection:bg-primary/30 select-none">
@@ -27,12 +38,9 @@ export const NavShell: React.FC<NavShellProps> = ({
       <aside className="hidden lg:flex flex-col w-[280px] h-screen fixed left-0 top-0 bg-surface-container border-r border-white/5 p-6 z-20">
         {/* Brand Logo & Title */}
         <div className="flex items-center gap-3 mb-10 mt-2 px-2">
-          {/* Custom SVG logo resembling the AutoClutch speed/shield design */}
-          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-[0_4px_15px_rgba(91,79,227,0.4)]">
-            <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L4 5V11C4 16.55 7.84 21.74 12 23C16.16 21.74 20 16.55 20 11V5L12 2Z" fill="currentColor" fillOpacity="0.15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M10 15L15 10M10 10L14 14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+          {/* Brand dark logo in squircle shape */}
+          <div className="w-10 h-10 rounded-xl overflow-hidden shadow-[0_4px_15px_rgba(91,79,227,0.4)] bg-transparent">
+            <img src="/shared/assets/autoclutch_icon_dark.png" alt="AutoClutch" className="w-full h-full object-cover scale-110 rounded-xl" />
           </div>
           <div>
             <h1 className="text-xl font-extrabold tracking-tight text-white">AutoClutch</h1>
@@ -77,18 +85,31 @@ export const NavShell: React.FC<NavShellProps> = ({
             <span>Settings</span>
           </button>
 
-          {/* User Profile Info */}
-          <div className="flex items-center gap-3 px-2 pt-2">
-            <div className="relative w-10 h-10 rounded-full overflow-hidden border border-primary/40 bg-surface-container-high flex items-center justify-center">
-              {/* Fallback to user icon or nice avatar initials */}
-              <User className="w-5 h-5 text-primary" />
-              {/* Micro green online indicator */}
-              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-success rounded-full border-2 border-surface-container" />
+          {/* User Profile Info with Sign Out option */}
+          <div className="flex items-center justify-between gap-2 px-2 pt-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative w-10 h-10 rounded-full overflow-hidden border border-primary/40 bg-surface-container-high flex items-center justify-center">
+                {user?.photoURL ? (
+                  <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <User className="w-5 h-5 text-primary" />
+                )}
+                {/* Micro green online indicator */}
+                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-success rounded-full border-2 border-surface-container" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-on-surface truncate">{userDisplayName}</h4>
+                <p className="text-xs text-on-surface-variant truncate">{userEmail}</p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <h4 className="text-sm font-bold text-on-surface truncate">Alex Mercer</h4>
-              <p className="text-xs text-on-surface-variant truncate">alex@example.com</p>
-            </div>
+
+            <button
+              onClick={onSignOut}
+              className="p-2 rounded-full hover:bg-urgent/10 text-on-surface-variant hover:text-urgent transition-colors cursor-pointer"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </aside>
@@ -98,15 +119,26 @@ export const NavShell: React.FC<NavShellProps> = ({
       {/* ========================================== */}
       <header className="lg:hidden flex items-center justify-between h-16 px-6 bg-surface-container/90 backdrop-blur-md border-b border-white/5 sticky top-0 z-30">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L4 5V11C4 16.55 7.84 21.74 12 23C16.16 21.74 20 16.55 20 11V5L12 2Z" fill="currentColor" fillOpacity="0.15" stroke="currentColor" strokeWidth="2"/>
-            </svg>
+          <div className="w-8 h-8 rounded-lg overflow-hidden bg-transparent">
+            <img src="/shared/assets/autoclutch_icon_dark.png" alt="AutoClutch" className="w-full h-full object-cover scale-110 rounded-lg" />
           </div>
           <span className="text-lg font-extrabold text-white tracking-tight">AutoClutch</span>
         </div>
-        <div className="w-8 h-8 rounded-full overflow-hidden border border-primary/40 bg-surface-container-high flex items-center justify-center">
-          <User className="w-4 h-4 text-primary" />
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full overflow-hidden border border-primary/40 bg-surface-container-high flex items-center justify-center">
+            {user?.photoURL ? (
+              <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <User className="w-4 h-4 text-primary" />
+            )}
+          </div>
+          <button
+            onClick={onSignOut}
+            className="p-1.5 rounded-full hover:bg-urgent/10 text-on-surface-variant hover:text-urgent transition-colors cursor-pointer"
+            title="Sign Out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </header>
 

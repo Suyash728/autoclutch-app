@@ -30,6 +30,28 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+@keyframes flux {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
+  100% { transform: translate(-45%, -55%) scale(1.2); opacity: 0.5; }
+}
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-flux-slow {
+  animation: flux 12s ease-in-out infinite alternate;
+}
+
+.animate-flux-fast {
+  animation: flux 8s ease-in-out infinite alternate-reverse;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 .glass-modal {
   background: rgba(27, 19, 72, 0.85);
   backdrop-filter: blur(24px);

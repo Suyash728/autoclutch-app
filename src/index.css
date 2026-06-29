@@ -1,0 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-primary: #5B4FE3;
+  --color-primary-hover: #4232CA;
+  --color-bg-base: #1A1244;
+  --color-surface-base: #13121b;
+  --color-surface-card: #20184e;
+  --color-surface-container: #1b1348;
+  --color-surface-container-high: #271f5c;
+  --color-surface-container-highest: #332b6e;
+  
+  --color-on-surface: #e4e1ed;
+  --color-on-surface-variant: #c8c4d7;
+  
+  --color-tertiary: #ffb4a6;
+  --color-urgent: #ff5a5a;
+  --color-success: #10b981;
+}
+
+/* Custom styles for high-fidelity glassmorphism */
+.glass-panel {
+  background: rgba(32, 24, 78, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-modal {
+  background: rgba(27, 19, 72, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 50px rgba(13, 8, 38, 0.5), 0 0 30px rgba(91, 79, 227, 0.15);
+}
+
+.glass-input {
+  background: rgba(39, 31, 92, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.2s ease-in-out;
+}
+
+.glass-input:focus {
+  background: rgba(39, 31, 92, 0.8);
+  border-color: #5B4FE3;
+  outline: none;
+  box-shadow: 0 0 12px rgba(91, 79, 227, 0.3);
+}
+
+/* Base resets & styles */
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #1A1244;
+  color: #e4e1ed;
+  font-family: 'Manrope', sans-serif;
+  overflow-x: hidden;
+}
+
+/* Thinking pulse animation */
+@keyframes thinking-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 15px rgba(91, 79, 227, 0.4), 0 0 30px rgba(91, 79, 227, 0.2);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 25px rgba(91, 79, 227, 0.7), 0 0 50px rgba(91, 79, 227, 0.4);
+  }
+}
+
+.thinking-fab-pulse {
+  animation: thinking-pulse 2.5s infinite ease-in-out;
+}
+
+/* Custom scrollbars for high fidelity */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(26, 18, 68, 0.3);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(91, 79, 227, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(91, 79, 227, 0.5);
+}

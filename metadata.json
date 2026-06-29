@@ -1,0 +1,6 @@
+{
+  "name": "AutoClutch",
+  "description": "An autonomous agentic productivity companion that syncs tasks with Google Tasks and Calendar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

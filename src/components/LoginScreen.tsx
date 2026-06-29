@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase';
+import React, { useState, useEffect } from 'react';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider } from 'firebase/auth';
+import { auth, googleProvider, setCachedAccessToken } from '../firebase';
 import { AlertCircle } from 'lucide-react';
 
 interface LoginScreenProps {
@@ -15,13 +15,32 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result) {
+          const credential = GoogleAuthProvider.credentialFromResult(result);
+          if (credential?.accessToken) {
+            setCachedAccessToken(credential.accessToken);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Error getting redirect result:", err);
+      });
+  }, []);
+
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setError(null);
     if (onLoginStart) onLoginStart();
 
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setCachedAccessToken(credential.accessToken);
+      }
     } catch (err: any) {
       console.error("Auth error during popup:", err);
       if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/popup-closed-by-user') {

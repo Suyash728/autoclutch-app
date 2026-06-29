@@ -37,8 +37,8 @@ import { ListItem } from './components/ListItem';
 import { NavShell } from './components/NavShell';
 import { MotionSpring } from './design-tokens';
 
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth, db } from './firebase';
+import { onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { auth, db, googleProvider, getCachedAccessToken, setCachedAccessToken } from './firebase';
 import {
   collection,
   doc,
@@ -84,6 +84,7 @@ export default function App() {
   ]);
 
   const [activityLogs, setActivityLogs] = useState<AgentActivityLog[]>([]);
+  const [isAgentRunning, setIsAgentRunning] = useState(false);
 
   // Filters State
   const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'upcoming' | 'completed'>('all');
@@ -439,6 +440,133 @@ export default function App() {
     setIsDetailModalOpen(true);
   };
 
+  // Helper to get or request Google OAuth Access Token
+  const getOrRequestAccessToken = async (): Promise<string | null> => {
+    let token = getCachedAccessToken();
+    if (token) return token;
+    
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const fetchedToken = credential?.accessToken || null;
+      if (fetchedToken) {
+        setCachedAccessToken(fetchedToken);
+        return fetchedToken;
+      }
+    } catch (err) {
+      console.error("Error obtaining Google access token:", err);
+    }
+    return null;
+  };
+
+  // Helper to call backend for Google Tasks sync
+  const syncTaskToGoogle = async (taskId: string) => {
+    if (!user) return;
+    const token = await getOrRequestAccessToken();
+    if (!token) {
+      console.warn("Could not sync to Google Tasks: No access token available");
+      return;
+    }
+    try {
+      const res = await fetch('/api/tasks/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId,
+          userId: user.uid,
+          accessToken: token
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        console.error("Sync API error response:", errData);
+      }
+    } catch (err) {
+      console.error("Failed to sync task with server-side Google Tasks API:", err);
+    }
+  };
+
+  // Helper to call backend for Google Tasks deletion
+  const deleteGoogleTask = async (googleTaskId: string, title?: string) => {
+    if (!user) return;
+    const token = getCachedAccessToken();
+    if (!token) {
+      console.log("No cached access token available, skipping Google Task deletion from server");
+      return;
+    }
+    try {
+      const res = await fetch('/api/tasks/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          googleTaskId,
+          userId: user.uid,
+          accessToken: token,
+          title: title || ''
+        })
+      });
+      if (!res.ok) {
+        console.error("Delete API error response:", await res.text());
+      }
+    } catch (err) {
+      console.error("Failed to delete Google Task via server-side API:", err);
+    }
+  };
+
+  // Helper to call backend for Google Calendar sync
+  const syncDeadlineEventToGoogle = async (taskId: string) => {
+    if (!user) return;
+    const token = await getOrRequestAccessToken();
+    if (!token) {
+      console.warn("Could not sync to Google Calendar: No access token available");
+      return;
+    }
+    try {
+      const res = await fetch('/api/calendar/deadline/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId,
+          userId: user.uid,
+          accessToken: token
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        console.error("Calendar Sync API error response:", errData);
+      }
+    } catch (err) {
+      console.error("Failed to sync calendar deadline via server-side API:", err);
+    }
+  };
+
+  // Helper to call backend for Google Calendar deletion
+  const deleteDeadlineEventFromGoogle = async (deadlineEventId: string, title?: string) => {
+    if (!user) return;
+    const token = getCachedAccessToken();
+    if (!token) {
+      console.log("No cached access token available, skipping Google Calendar event deletion from server");
+      return;
+    }
+    try {
+      const res = await fetch('/api/calendar/deadline/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deadlineEventId,
+          userId: user.uid,
+          accessToken: token,
+          title: title || ''
+        })
+      });
+      if (!res.ok) {
+        console.error("Calendar Delete API error response:", await res.text());
+      }
+    } catch (err) {
+      console.error("Failed to delete Calendar event via server-side API:", err);
+    }
+  };
+
   // Save Task
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -460,6 +588,8 @@ export default function App() {
       if (selectedTask) {
         // Editing in Firestore
         const taskRef = doc(db, 'users', user.uid, 'tasks', selectedTask.id);
+        const wasSynced = !!selectedTask.googleTaskId;
+        const wasCalendarSynced = !!selectedTask.deadlineEventId;
         await updateDoc(taskRef, {
           title: formTitle,
           description: formDescription,
@@ -467,12 +597,26 @@ export default function App() {
           effortHours: finalEffort,
           tag: finalTag,
           priorityScore: priorityScoreMap[formPriority] ?? 1,
-          googleTaskId: isGoogleSyncChecked ? (selectedTask.googleTaskId || `gtask-${Date.now()}`) : null,
-          deadlineEventId: isCalendarSyncChecked ? (selectedTask.deadlineEventId || `gcal-${Date.now()}`) : null,
+          googleTaskId: isGoogleSyncChecked ? selectedTask.googleTaskId || null : null,
+          deadlineEventId: isCalendarSyncChecked ? selectedTask.deadlineEventId || null : null,
           updatedAt: new Date().toISOString()
         });
 
-        await addFirestoreLog(user.uid, 'Task Update', `Updated Task: "${formTitle}" (Synced to Google Tasks & Calendar)`);
+        await addFirestoreLog(user.uid, 'Task Update', `Updated Task: "${formTitle}"`);
+
+        // Handle Google Tasks sync/delete
+        if (isGoogleSyncChecked) {
+          await syncTaskToGoogle(selectedTask.id);
+        } else if (wasSynced && selectedTask.googleTaskId) {
+          await deleteGoogleTask(selectedTask.googleTaskId, formTitle);
+        }
+
+        // Handle Google Calendar sync/delete
+        if (isCalendarSyncChecked) {
+          await syncDeadlineEventToGoogle(selectedTask.id);
+        } else if (wasCalendarSynced && selectedTask.deadlineEventId) {
+          await deleteDeadlineEventFromGoogle(selectedTask.deadlineEventId, formTitle);
+        }
       } else {
         // Creating in Firestore
         const taskId = `task-${Date.now()}`;
@@ -486,8 +630,8 @@ export default function App() {
           priorityScore: priorityScoreMap[formPriority] ?? 1,
           status: 'pending',
           source: 'user',
-          googleTaskId: isGoogleSyncChecked ? `gtask-${Date.now()}` : null,
-          deadlineEventId: isCalendarSyncChecked ? `gcal-${Date.now()}` : null,
+          googleTaskId: null,
+          deadlineEventId: null,
           focusEventIds: [],
           subtasks: [],
           createdAt: new Date().toISOString(),
@@ -495,6 +639,16 @@ export default function App() {
         });
 
         await addFirestoreLog(user.uid, 'Task Create', `Created Task: "${formTitle}" (Estimated effort: ${finalEffort} hrs)`);
+
+        // Handle Google Tasks sync
+        if (isGoogleSyncChecked) {
+          await syncTaskToGoogle(taskId);
+        }
+
+        // Handle Google Calendar sync
+        if (isCalendarSyncChecked) {
+          await syncDeadlineEventToGoogle(taskId);
+        }
       }
     } catch (err) {
       console.error("Error saving task:", err);
@@ -507,6 +661,14 @@ export default function App() {
     if (!user) return;
     try {
       const taskToDelete = tasks.find(t => t.id === id);
+      if (taskToDelete) {
+        if (taskToDelete.googleTaskId) {
+          await deleteGoogleTask(taskToDelete.googleTaskId, taskToDelete.title);
+        }
+        if (taskToDelete.deadlineEventId) {
+          await deleteDeadlineEventFromGoogle(taskToDelete.deadlineEventId, taskToDelete.title);
+        }
+      }
       const taskRef = doc(db, 'users', user.uid, 'tasks', id);
       await deleteDoc(taskRef);
       if (taskToDelete) {
@@ -537,6 +699,16 @@ export default function App() {
           ? `Completed Task: "${taskToToggle.title}" (Verified Sync)`
           : `Reopened Task: "${taskToToggle.title}"`
       );
+
+      // Handle Google Tasks sync
+      if (taskToToggle.googleTaskId || (isGoogleSyncChecked && !taskToToggle.googleTaskId)) {
+        await syncTaskToGoogle(id);
+      }
+
+      // Handle Google Calendar sync
+      if (taskToToggle.deadlineEventId || (isCalendarSyncChecked && !taskToToggle.deadlineEventId)) {
+        await syncDeadlineEventToGoogle(id);
+      }
     } catch (err) {
       console.error("Error toggling task complete:", err);
     }
@@ -547,8 +719,115 @@ export default function App() {
     await addFirestoreLog(user.uid, type === 'task' ? 'Task Sync' : 'System Log', text);
   };
 
+  // Implement prioritize(): priorityScore = 0.40*urgency + 0.30*importance + 0.15*effort_fit - 0.15*slack
+  const prioritize = (taskList: Task[]): Task[] => {
+    const openTasks = tasks.filter(t => !t.isCompleted);
+    if (openTasks.length === 0) {
+      return [...taskList].sort((a, b) => {
+        if (a.isCompleted && !b.isCompleted) return 1;
+        if (!a.isCompleted && b.isCompleted) return -1;
+        return 0;
+      });
+    }
+
+    const now = Date.now();
+
+    // Calculate raw metrics for open tasks
+    const taskDetails = openTasks.map(t => {
+      let dueTimeMs = now + 7 * 24 * 60 * 60 * 1000; // default 7 days in future
+      if (t.dueDate) {
+        try {
+          const iso = convertToISO(t.dueDate, t.dueTime || '5:00 PM');
+          dueTimeMs = new Date(iso).getTime();
+        } catch (e) {
+          // fallback
+        }
+      }
+      const timeRemainingHours = (dueTimeMs - now) / 3600000;
+      const effort = t.estimatedEffort || 1;
+      const slackHours = timeRemainingHours - effort;
+
+      // Importance based on priority field
+      let importance = 4; // Normal
+      if (t.priority === 'Urgent') importance = 10;
+      else if (t.priority === 'High') importance = 7;
+      else if (t.priority === 'Normal') importance = 4;
+      else if (t.priority === 'Low') importance = 1;
+
+      return {
+        id: t.id,
+        timeRemainingHours,
+        importance,
+        effort,
+        slackHours
+      };
+    });
+
+    const timeRemainings = taskDetails.map(d => d.timeRemainingHours);
+    const minTimeRemaining = Math.min(...timeRemainings);
+    const maxTimeRemaining = Math.max(...timeRemainings);
+
+    const efforts = taskDetails.map(d => d.effort);
+    const minEffort = Math.min(...efforts);
+    const maxEffort = Math.max(...efforts);
+
+    const slacks = taskDetails.map(d => d.slackHours);
+    const minSlack = Math.min(...slacks);
+    const maxSlack = Math.max(...slacks);
+
+    const scoresMap: Record<string, number> = {};
+    taskDetails.forEach(d => {
+      // urgency: 0 to 10 (shorter remaining time = higher urgency)
+      let urgency = 5;
+      if (maxTimeRemaining !== minTimeRemaining) {
+        urgency = 10 * (1 - (d.timeRemainingHours - minTimeRemaining) / (maxTimeRemaining - minTimeRemaining));
+      } else {
+        urgency = d.timeRemainingHours <= 24 ? 10 : 5;
+      }
+      urgency = Math.max(0, Math.min(10, urgency));
+
+      const importance = d.importance;
+
+      // effort_fit: 0 to 10 (smaller effort = higher fit)
+      let effort_fit = 5;
+      if (maxEffort !== minEffort) {
+        effort_fit = 10 * (1 - (d.effort - minEffort) / (maxEffort - minEffort));
+      } else {
+        effort_fit = d.effort <= 2 ? 10 : 5;
+      }
+      effort_fit = Math.max(0, Math.min(10, effort_fit));
+
+      // slack: 0 to 10 (larger slack hours = higher slack score)
+      let slack = 5;
+      if (maxSlack !== minSlack) {
+        slack = 10 * (d.slackHours - minSlack) / (maxSlack - minSlack);
+      } else {
+        slack = d.slackHours >= 48 ? 10 : 5;
+      }
+      slack = Math.max(0, Math.min(10, slack));
+
+      const score = 0.40 * urgency + 0.30 * importance + 0.15 * effort_fit - 0.15 * slack;
+      scoresMap[d.id] = score;
+    });
+
+    // Sort: open tasks first (sorted by priority score in descending order), then completed tasks
+    return [...taskList].sort((a, b) => {
+      if (a.isCompleted && !b.isCompleted) return 1;
+      if (!a.isCompleted && b.isCompleted) return -1;
+      
+      if (!a.isCompleted && !b.isCompleted) {
+        const scoreA = scoresMap[a.id] ?? 0;
+        const scoreB = scoresMap[b.id] ?? 0;
+        return scoreB - scoreA; // descending
+      }
+
+      // If both completed, sort alphabetically
+      return a.title.localeCompare(b.title);
+    });
+  };
+
   // Filter logic
-  const filteredTasks = tasks.filter(t => {
+  const unfilteredTasks = tasks.filter(t => {
     // Search query match
     if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase()) && !t.description.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false;
@@ -565,6 +844,8 @@ export default function App() {
     }
     return true; // All tasks
   });
+
+  const filteredTasks = prioritize(unfilteredTasks);
 
   // Calculate high priority active tasks count
   const urgentTasksCount = tasks.filter(t => !t.isCompleted && (t.priority === 'Urgent' || t.priority === 'High')).length;
@@ -655,9 +936,39 @@ export default function App() {
 
 
   const handleCustomPromptSubmit = async () => {
-    if (!customPrompt.trim() || !user) return;
-    await addFirestoreLog(user.uid, 'Agent Command', `Instructed: "${customPrompt}"`);
+    if (!customPrompt.trim() || !user || isAgentRunning) return;
+    setIsAgentRunning(true);
+    const instruction = customPrompt.trim();
     setCustomPrompt('');
+
+    try {
+      await addFirestoreLog(user.uid, 'Agent Command', `Instructed: "${instruction}"`);
+      const token = await getOrRequestAccessToken();
+
+      const response = await fetch('/api/agent/run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt: instruction,
+          userId: user.uid,
+          accessToken: token || ''
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Server error running agent loop');
+      }
+
+      await response.json();
+    } catch (err: any) {
+      console.error("[App] Failed to run agent loop:", err);
+      await addFirestoreLog(user.uid, 'Agent System Error', `Loop failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsAgentRunning(false);
+    }
   };
 
   const handleSignOut = () => {
@@ -984,13 +1295,18 @@ export default function App() {
 
               <div className="flex gap-3">
                 <Input
-                  placeholder="e.g. Schedule 2 hours for Q3 slide preparations on Tuesday morning..."
+                  placeholder={isAgentRunning ? "Agent is processing your instruction..." : "e.g. Schedule 2 hours for Q3 slide preparations on Tuesday morning..."}
                   className="flex-1"
                   value={customPrompt}
                   onChange={(e) => setCustomPrompt(e.target.value)}
+                  disabled={isAgentRunning}
                 />
-                <Button variant="primary" onClick={handleCustomPromptSubmit}>
-                  Instruct
+                <Button 
+                  variant="primary" 
+                  onClick={handleCustomPromptSubmit}
+                  disabled={isAgentRunning || !customPrompt.trim()}
+                >
+                  {isAgentRunning ? 'Thinking...' : 'Instruct'}
                 </Button>
               </div>
 
@@ -1277,7 +1593,7 @@ export default function App() {
       {/* ========================================== */}
       {/* THINKING AI FAB */}
       {/* ========================================== */}
-      <FAB onClick={() => setIsVoiceModalOpen(true)} isThinking={true} />
+      <FAB onClick={() => setIsVoiceModalOpen(true)} isThinking={isAgentRunning} />
 
       {/* ========================================== */}
       {/* CREATE / EDIT TASK GLASS MODAL */}

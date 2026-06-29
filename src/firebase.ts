@@ -19,6 +19,17 @@ export const db = getFirestore(app, "ai-studio-autoclutch-87e8c7df-e80b-489c-ac5
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
+// Request Google Workspace scopes
+googleProvider.addScope('https://www.googleapis.com/auth/tasks');
+googleProvider.addScope('https://www.googleapis.com/auth/calendar.events');
+googleProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+
+let cachedAccessToken: string | null = null;
+export const getCachedAccessToken = () => cachedAccessToken;
+export const setCachedAccessToken = (token: string | null) => {
+  cachedAccessToken = token;
+};
+
 // Validate Connection to Firestore (MANDATORY per SKILL.md)
 async function testConnection() {
   try {
